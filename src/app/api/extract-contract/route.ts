@@ -83,8 +83,11 @@ Nhiệm vụ: phân tích TOÀN BỘ nội dung công văn, xác định LOẠI 
 
 ### "Công văn đi 1"
 - Góc trên trái: "TRUNG NAM"/"TNE&C"/"TNEC"
-- Ký hiệu: BBH hoặc QĐ (KHÔNG có HĐQT)
-- VD: "49/QĐ/TNE&C", "12/BBH/TNE&C"
+- Đây là các văn bản nội bộ gồm 2 loại:
+  + **Biên bản họp** (ký hiệu: BBH) — ghi lại nội dung các cuộc họp nội bộ
+  + **Quyết định** (ký hiệu: QĐ) — các quyết định ban hành nội bộ công ty
+- Ký hiệu KHÔNG có "HĐQT" đi kèm
+- VD: "49/QĐ/TNE&C", "12/BBH/TNE&C", "05/QĐ-TNEC", "08/BBH-TNEC"
 
 ### "Công văn đi 1 - HĐQT"
 - Góc trên trái: "TRUNG NAM"/"TNE&C"/"TNEC"
