@@ -132,15 +132,20 @@ export default function Home() {
           for (const p of pagesToRender) {
             setProcessingText(`Đang render trang ${p}/${totalPages}...`);
             const page = await pdf.getPage(p);
-            const viewport = page.getViewport({ scale: 0.75 }); // scale nhỏ để payload dưới 4.5MB Vercel
+            // Giới hạn cứng 800px chiều rộng (bất kể PDF gốc 72 DPI hay 300 DPI)
+            // → mỗi trang ~50-80KB, 16 trang ~1MB, an toàn dưới 4.5MB Vercel
+            const MAX_WIDTH = 800;
+            const nativeViewport = page.getViewport({ scale: 1.0 });
+            const scale = MAX_WIDTH / nativeViewport.width;
+            const viewport = page.getViewport({ scale });
             const canvas = document.createElement("canvas");
             const ctx = canvas.getContext("2d");
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
+            canvas.width = Math.round(nativeViewport.width * scale);
+            canvas.height = Math.round(nativeViewport.height * scale);
 
             if (ctx) {
               await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-              const dataUrl = canvas.toDataURL("image/jpeg", 0.4); // quality 0.4 → ~150-200KB/trang
+              const dataUrl = canvas.toDataURL("image/jpeg", 0.4);
               pageImages.push(dataUrl);
               if (p === 1) previewBase64 = dataUrl;
             }
