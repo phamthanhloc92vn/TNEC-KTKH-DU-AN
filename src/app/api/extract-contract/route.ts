@@ -23,9 +23,7 @@ export async function POST(request: Request) {
         if (!apiKey) {
             return NextResponse.json({ error: 'Thiếu API key. Vào Settings để cấu hình.' }, { status: 400 });
         }
-        if (!file && !pdfBase64Raw) {
-            return NextResponse.json({ error: 'Không có file PDF nào được gửi lên.' }, { status: 400 });
-        }
+        // Không check file/pdf_base64 ở đây vì có thể chỉ gửi ảnh (tránh 413 Vercel)
 
         const openai = new OpenAI({ apiKey });
 
