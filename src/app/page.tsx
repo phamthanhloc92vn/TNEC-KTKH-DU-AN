@@ -127,12 +127,13 @@ export default function Home() {
           
           console.log(`📄 PDF: ${totalPages} trang, gửi ${pagesToRender.length} trang (Vercel limit)`);
 
+          // 800px hard cap + adaptive quality: đảm bảo TỔNG payload < 3.5MB
+          const MAX_WIDTH = 800;
+          const MAX_PAYLOAD_BYTES = 3.5 * 1024 * 1024; // 3.5MB an toàn dưới Vercel 4.5MB
+          
           for (const p of pagesToRender) {
             setProcessingText(`Đang render trang ${p}/${totalPages}...`);
             const page = await pdf.getPage(p);
-            // Giới hạn cứng 800px chiều rộng (bất kể PDF gốc 72 DPI hay 300 DPI)
-            // → mỗi trang ~50-80KB, 16 trang ~1MB, an toàn dưới 4.5MB Vercel
-            const MAX_WIDTH = 800;
             const nativeViewport = page.getViewport({ scale: 1.0 });
             const scale = MAX_WIDTH / nativeViewport.width;
             const viewport = page.getViewport({ scale });
@@ -143,11 +144,32 @@ export default function Home() {
 
             if (ctx) {
               await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-              const dataUrl = canvas.toDataURL("image/jpeg", 0.4);
+              // Bắt đầu với quality 0.4, giảm nếu payload vượt giới hạn
+              let quality = 0.4;
+              let dataUrl = canvas.toDataURL("image/jpeg", quality);
+              
+              // Tính tổng payload hiện tại
+              const currentTotal = pageImages.reduce((sum, img) => sum + img.length, 0);
+              
+              // Nếu thêm trang này mà vượt giới hạn → giảm quality
+              while (currentTotal + dataUrl.length > MAX_PAYLOAD_BYTES && quality > 0.15) {
+                quality -= 0.05;
+                dataUrl = canvas.toDataURL("image/jpeg", quality);
+              }
+              
+              // Nếu vẫn vượt giới hạn → bỏ qua trang này (giữ trang quan trọng)
+              if (currentTotal + dataUrl.length > MAX_PAYLOAD_BYTES && pageImages.length >= 10) {
+                console.warn(`⚠️ Bỏ trang ${p} do payload gần giới hạn (${Math.round((currentTotal + dataUrl.length) / 1024 / 1024 * 100) / 100}MB)`);
+                continue;
+              }
+              
               pageImages.push(dataUrl);
               if (p === 1) previewBase64 = dataUrl;
             }
           }
+          
+          const totalPayload = pageImages.reduce((sum, img) => sum + img.length, 0);
+          console.log(`📤 Tổng payload: ${Math.round(totalPayload / 1024)}KB (${pageImages.length} trang), giới hạn: ${Math.round(MAX_PAYLOAD_BYTES / 1024)}KB`);
         } catch (pdfErr) {
           console.error("❌ Lỗi render PDF sang ảnh:", pdfErr);
         }
