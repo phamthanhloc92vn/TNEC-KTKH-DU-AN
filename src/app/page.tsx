@@ -162,22 +162,25 @@ export default function Home() {
         console.log(`🤖 Model đang dùng: ${selectedModel}`);
         setProcessingText(`Đang gửi lên AI (${selectedModel}) để phân tích hợp đồng...`);
         const formData = new FormData();
-        formData.append("file", file);
         formData.append("model", selectedModel);
         if (pageImages.length > 0) {
+          // Có ảnh → KHÔNG gửi file PDF gốc (tránh 413 trên Vercel)
+          // File PDF scan có thể 10-30MB, vượt giới hạn 4.5MB của Vercel
           pageImages.forEach((img, idx) => {
             formData.append(`image_page_${idx + 1}`, img);
           });
           formData.append("total_pages_sent", String(pageImages.length));
-          console.log(`📤 Gửi ${pageImages.length} ảnh lên AI (model: ${selectedModel})`);
+          console.log(`📤 Gửi ${pageImages.length} ảnh (KHÔNG gửi file gốc để tránh 413)`);
         } else {
+          // Fallback: ảnh render thất bại → gửi file PDF gốc
+          formData.append("file", file);
           const pdfBase64 = await new Promise<string>((resolve) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result as string);
             reader.readAsDataURL(file);
           });
           formData.append("pdf_base64", pdfBase64);
-          console.warn("⚠️ Canvas failed. Fallback to sending raw PDF base64.");
+          console.warn("⚠️ Canvas failed. Fallback: sending raw PDF.");
         }
 
         const response = await fetch("/api/extract-contract", {
