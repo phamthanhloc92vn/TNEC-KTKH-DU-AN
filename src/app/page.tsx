@@ -1,89 +1,84 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Settings } from "lucide-react";
 import UploadPanel from "./components/UploadPanel";
 import ResultsPanel from "./components/ResultsPanel";
 import SettingsModal from "./components/SettingsModal";
 
+const DEFAULT_PROJECTS = [
+  "Rạch xuyên tâm",
+  "Hương lộ 11",
+  "Xử lý nước thải tây ninh",
+  "Thường Phước",
+  "Cầu Mã Đà",
+  "Tổng Hợp",
+];
 
-interface CongVanData {
-  "Loại công văn": string;
-  "Số văn bản": string;
-  "Ngày văn bản": string;
-  "Tóm nội dung chính": string;
-  "Đơn vị gửi đến": string;
-  "Người nhận": string;
-  "Ngày/Tháng": string;
-  "Tên File CV": string;
-}
-
-// Normalize Vietnamese text date → DD/MM/YYYY
-function normalizeDate(raw: string): string {
-  if (!raw || raw === "N/A") return raw;
-
-  // Handle AI literally returning the placeholder string from prompt
-  if (raw.includes("DD/MM/YYYY") || raw.includes("DD/MM/2026")) return "N/A";
-
-  // Already in DD/MM/YYYY format
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw.trim())) return raw.trim();
-
-  // D/M/YYYY or D/M/YY
-  const slashMatch = raw.match(/(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})/);
-  if (slashMatch) {
-    const d = slashMatch[1].padStart(2, "0");
-    const m = slashMatch[2].padStart(2, "0");
-    const y = slashMatch[3].length === 2 ? "20" + slashMatch[3] : slashMatch[3];
-    return `${d}/${m}/${y}`;
-  }
-
-  // "ngày X tháng Y năm Z" or "Tháng Y năm Z"
-  const viMatch = raw.match(/(?:ng[àa]y\s+(\d{1,2})\s+)?[Tt]h[àa]ng\s+(\d{1,2})\s+[Nn]ă[mn]\s+(\d{4})/);
-  if (viMatch) {
-    const d = viMatch[1] ? viMatch[1].padStart(2, "0") : "01";
-    const m = viMatch[2].padStart(2, "0");
-    const y = viMatch[3];
-    return `${d}/${m}/${y}`;
-  }
-
-  // "tháng 03 năm 2025" without "ngày"
-  const monthYear = raw.match(/[Tt]h[àa]ng\s+(\d{1,2})[,\s]+[Nn]ă[mn]\s+(\d{4})/);
-  if (monthYear) {
-    return `${monthYear[1].padStart(2, "0")}/${monthYear[2]}`;
-  }
-
-  return raw; // return as-is if cannot parse
+interface HopDongData {
+  stt: string;
+  tenDuAn: string;
+  soHopDong: string;
+  donViKy: string;
+  giaTri: string;
+  tiLeHopDong: string;
+  daTamUng: string;
+  thuHoiTamUng: string;
+  conLaiChuaThuHoi: string;
+  loaiHopDong: string;
+  tenFileHD: string;
 }
 
 export default function Home() {
   const [status, setStatus] = useState<"IDLE" | "PROCESSING" | "SUCCESS">("IDLE");
   const [processingText, setProcessingText] = useState("");
-  const [extractedData, setExtractedData] = useState<CongVanData[]>([]);
+  const [extractedData, setExtractedData] = useState<HopDongData[]>([]);
   const [validationScores, setValidationScores] = useState<Record<string, number>[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [fileUrls, setFileUrls] = useState<string[]>([]);
   const [selectedPdfIndex, setSelectedPdfIndex] = useState(0);
   const [syncStatus, setSyncStatus] = useState<"IDLE" | "SYNCING" | "SUCCESS">("IDLE");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [projectOptions, setProjectOptions] = useState<string[]>(DEFAULT_PROJECTS);
+  const [selectedProject, setSelectedProject] = useState("Tổng Hợp");
+
+  const loadProjects = useCallback(() => {
+    const saved = localStorage.getItem("tnec_hd_projects");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setProjectOptions(parsed);
+          if (!parsed.includes(selectedProject)) setSelectedProject(parsed[0]);
+        }
+      } catch (e) { /* ignore */ }
+    }
+  }, [selectedProject]);
+
+  useEffect(() => { loadProjects(); }, [loadProjects]);
+
+  const handleSettingsClose = () => {
+    setIsSettingsOpen(false);
+    loadProjects();
+  };
 
   const handleUpload = async (files: File[]) => {
     const savedSettings = localStorage.getItem("contract_ai_settings");
     if (!savedSettings) {
-      alert("Please configure your OpenAI API Key in Settings first.");
+      alert("Vui lòng cấu hình API Key trong Settings trước.");
       setIsSettingsOpen(true);
       return;
     }
     const settings = JSON.parse(savedSettings);
-    console.log(`⚙️ Settings loaded — scriptUrl: ${settings.scriptUrl ? 'OK' : 'EMPTY'}`);
     if (!settings.apiKey) {
-      alert("Please provide an OpenAI API Key in Settings.");
+      alert("Vui lòng nhập OpenAI API Key trong Settings.");
       setIsSettingsOpen(true);
       return;
     }
 
     setStatus("PROCESSING");
-    const newData: CongVanData[] = [...extractedData];
+    const newData: HopDongData[] = [...extractedData];
     const newScores: Record<string, number>[] = [...validationScores];
     const newPreviews: string[] = [...previews];
     const newFileUrls: string[] = [...fileUrls];
@@ -93,18 +88,16 @@ export default function Home() {
       setProcessingText(`Đang xử lý file ${i + 1}/${files.length} (${file.name})...`);
 
       try {
-        // Store original file URL for viewing
         const fileUrl = URL.createObjectURL(file);
         newFileUrls.push(fileUrl);
         setFileUrls([...newFileUrls]);
 
-        // 1. Convert PDF to images via CDN pdf.js (bypassing Next.js worker issues)
+        // 1. Convert PDF to images via CDN pdf.js
         setProcessingText(`Đang xử lý hình ảnh PDF...`);
         const pageImages: string[] = [];
         let previewBase64 = "";
 
         try {
-          // get pdfjsLib from global window, injected via next/script in layout
           const pdfjsLib = (window as any).pdfjsLib;
           if (!pdfjsLib) throw new Error("pdf.js not loaded from CDN");
 
@@ -113,16 +106,37 @@ export default function Home() {
           const arrayBuffer = await file.arrayBuffer();
           const pdf = await pdfjsLib.getDocument({
             data: arrayBuffer,
-            disableFontFace: true,   // prevent font crashes
+            disableFontFace: true,
             useSystemFonts: true,
           }).promise;
 
-          const pagesToScan = Math.min(pdf.numPages, 8); // Quét tối đa 8 trang đầu
-          console.log(`📄 PDF loaded: ${pagesToScan} trang`);
+          // Luôn lấy 40 trang ĐẦU TIÊN của hợp đồng (vì metadata, tiền bạc thường ở đầu)
+          // Nếu HĐ ngắn thì lấy tất cả. Nếu dài thì lấy 40 trang đầu.
+          const totalPages = pdf.numPages;
+          const MAX_READ = 40;
+          const pagesToRender: number[] = [];
+          
+          for (let p = 1; p <= Math.min(totalPages, MAX_READ); p++) {
+            pagesToRender.push(p);
+          }
+          
+          // Nếu HĐ quá dài (>40 trang), lấy thêm vài trang cuối để xem chữ ký
+          if (totalPages > MAX_READ) {
+            const lastPages = [totalPages - 1, totalPages];
+            lastPages.forEach(p => {
+              if (p > MAX_READ && !pagesToRender.includes(p)) pagesToRender.push(p);
+            });
+          }
+          
+          console.log(`📄 PDF: ${totalPages} trang, gửi ${pagesToRender.length}/40 trang quan trọng nhất.`);
+          console.log(`📄 PDF: ${totalPages} trang, render ${pagesToRender.length} trang [${pagesToRender.join(',')}]`);
 
-          for (let p = 1; p <= pagesToScan; p++) {
+          for (const p of pagesToRender) {
+            setProcessingText(`Đang render trang ${p}/${totalPages}...`);
             const page = await pdf.getPage(p);
-            const viewport = page.getViewport({ scale: 2.0 }); // Scale 2.0 cho OCR nét rực rỡ
+            // Scale 1.5 + quality 0.7: ảnh rõ nét → khi AI resize 512x512 vẫn đọc được số
+            // Token cost KHÔNG ĐỔI vì detail:low luôn = 85 tokens/ảnh
+            const viewport = page.getViewport({ scale: 1.5 });
             const canvas = document.createElement("canvas");
             const ctx = canvas.getContext("2d");
             canvas.height = viewport.height;
@@ -130,7 +144,7 @@ export default function Home() {
 
             if (ctx) {
               await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-              const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+              const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
               pageImages.push(dataUrl);
               if (p === 1) previewBase64 = dataUrl;
             }
@@ -139,22 +153,23 @@ export default function Home() {
           console.error("❌ Lỗi render PDF sang ảnh:", pdfErr);
         }
 
-        // Preview
         newPreviews.push(previewBase64);
         setPreviews([...newPreviews]);
 
-        // 2. Prepare Form Data
-        setProcessingText(`Đang gửi lên AI để phân tích...`);
+        // 2. Send to AI
+        const selectedModel = settings.model || "gpt-4o";
+        console.log(`🤖 Model đang dùng: ${selectedModel}`);
+        setProcessingText(`Đang gửi lên AI (${selectedModel}) để phân tích hợp đồng...`);
         const formData = new FormData();
         formData.append("file", file);
+        formData.append("model", selectedModel);
         if (pageImages.length > 0) {
           pageImages.forEach((img, idx) => {
             formData.append(`image_page_${idx + 1}`, img);
           });
           formData.append("total_pages_sent", String(pageImages.length));
-          console.log(`📤 Gửi ${pageImages.length} ảnh lên AI`);
+          console.log(`📤 Gửi ${pageImages.length} ảnh lên AI (model: ${selectedModel})`);
         } else {
-          // Fallback to sending base64 PDF directly if rendering somehow failed
           const pdfBase64 = await new Promise<string>((resolve) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result as string);
@@ -163,8 +178,6 @@ export default function Home() {
           formData.append("pdf_base64", pdfBase64);
           console.warn("⚠️ Canvas failed. Fallback to sending raw PDF base64.");
         }
-
-
 
         const response = await fetch("/api/extract-contract", {
           method: "POST",
@@ -180,26 +193,19 @@ export default function Home() {
         try {
           result = JSON.parse(responseText || "{}");
         } catch (e) {
-          throw new Error(`API Error (HTTP ${response.status}): The server did not return valid JSON.`);
+          throw new Error(`API Error (HTTP ${response.status}): Server did not return valid JSON.`);
         }
 
         if (!response.ok) {
           throw new Error(result.error || `Server error ${response.status}`);
         }
 
-        // Normalize "Ngày văn bản" — convert text dates to DD/MM/YYYY
-        if (result.data?.["Ngày văn bản"]) {
-          result.data["Ngày văn bản"] = normalizeDate(result.data["Ngày văn bản"]);
-        }
-        // Inject today's date as "Ngày/Tháng" (upload date)
-        const today = new Date();
-        result.data["Ngày/Tháng"] = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
-        // Inject filename
-        result.data["Tên File CV"] = file.name;
+        // Inject STT (auto-increment) and filename
+        result.data.stt = String(newData.length + 1);
+        result.data.tenFileHD = file.name;
 
         newData.push(result.data);
         newScores.push(result.validationScores || {});
-
 
         setExtractedData([...newData]);
         setValidationScores([...newScores]);
@@ -207,18 +213,31 @@ export default function Home() {
         // 3. Auto-Sync to Google Sheets
         const scriptUrl = settings.scriptUrl || "";
         if (scriptUrl) {
-          setProcessingText(`Đang đồng bộ "${result.data?.["Loại công văn"] || "N/A"}" lên Google Sheets...`);
+          setProcessingText(`Đang đồng bộ "${result.data?.soHopDong || "N/A"}" lên Google Sheets (${selectedProject})...`);
           try {
+            // Sync 1: Gửi đến sheet dự án riêng
             const payload = buildSheetsPayload(result.data);
-            console.log(`📤 Sync [${i + 1}/${files.length}] "${payload["Loại công văn"]}"`);
+            console.log(`📤 Sync [${i + 1}/${files.length}] → sheet "${selectedProject}"`);
             const syncResp = await fetch("/api/sync-sheets", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ scriptUrl, payload }),
             });
             const syncResult = await syncResp.json();
-            console.log(`✅ Sync [${i + 1}]:`, syncResult);
-            // Delay 1s giữa các sync để tránh rate limit
+            console.log(`✅ Sync [${i + 1}] project sheet:`, syncResult);
+
+            // Sync 2: Gửi đến sheet "Tổng Hợp"
+            setProcessingText(`Đang đồng bộ về Tổng Hợp...`);
+            const tongHopPayload = buildSheetsPayload(result.data, "Tổng Hợp");
+            console.log(`📤 Sync [${i + 1}] → sheet "Tổng Hợp" (loại: ${result.data.loaiHopDong || "CHU_DAU_TU"})`);
+            const tongHopResp = await fetch("/api/sync-sheets", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ scriptUrl, payload: tongHopPayload }),
+            });
+            const tongHopResult = await tongHopResp.json();
+            console.log(`✅ Sync [${i + 1}] Tổng Hợp:`, tongHopResult);
+
             if (i < files.length - 1) await new Promise(r => setTimeout(r, 500));
           } catch (syncError) {
             console.error(`❌ Sync failed [${i + 1}]:`, syncError);
@@ -238,20 +257,22 @@ export default function Home() {
     setTimeout(() => setSyncStatus("IDLE"), 5000);
   };
 
-  // Helper: build payload — keys match EXACTLY what Google Apps Script reads
-  // "Loại công văn" cho phép Apps Script ghi đúng sheet tab
-  const buildSheetsPayload = (data: CongVanData) => ({
-    "Loại công văn": data["Loại công văn"] || "N/A",
-    "Ngày/Tháng": data["Ngày/Tháng"] || "N/A",
-    "Số văn bản": data["Số văn bản"] || "N/A",
-    "Ngày văn bản": data["Ngày văn bản"] || "N/A",
-    "Tóm nội dung chính": data["Tóm nội dung chính"] || "N/A",
-    "Đơn vị gửi đến": data["Đơn vị gửi đến"] || "N/A",
-    "Người nhận": data["Người nhận"] || "N/A",
-    "Tên File CV": data["Tên File CV"] || "N/A",
+  const buildSheetsPayload = (data: HopDongData, targetSheet?: string) => ({
+    sheetName: targetSheet || selectedProject,
+    stt: data.stt || "N/A",
+    tenDuAn: data.tenDuAn || "N/A",
+    soHopDong: data.soHopDong || "N/A",
+    donViKy: data.donViKy || "N/A",
+    giaTri: data.giaTri || "N/A",
+    tiLeHopDong: data.tiLeHopDong || "N/A",
+    daTamUng: data.daTamUng || "N/A",
+    thuHoiTamUng: data.thuHoiTamUng || "N/A",
+    conLaiChuaThuHoi: data.conLaiChuaThuHoi || "N/A",
+    loaiHopDong: data.loaiHopDong || "CHU_DAU_TU",
+    tenFileHD: data.tenFileHD || "N/A",
   });
 
-  const handleDataUpdate = (index: number, updatedItem: CongVanData) => {
+  const handleDataUpdate = (index: number, updatedItem: HopDongData) => {
     const updated = [...extractedData];
     updated[index] = updatedItem;
     setExtractedData(updated);
@@ -268,15 +289,28 @@ export default function Home() {
     setSyncStatus("SYNCING");
     try {
       for (const data of extractedData) {
+        // Sync 1: Sheet dự án
         const payload = buildSheetsPayload(data);
-        console.log(`📤 Manual sync "${payload["Loại công văn"]}"`);
+        console.log(`📤 Manual sync → sheet "${selectedProject}"`);
         const resp = await fetch("/api/sync-sheets", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ scriptUrl, payload }),
         });
         const result = await resp.json();
-        console.log(`✅ Manual sync result:`, result);
+        console.log(`✅ Manual sync project:`, result);
+
+        // Sync 2: Sheet Tổng Hợp
+        const tongHopPayload = buildSheetsPayload(data, "Tổng Hợp");
+        console.log(`📤 Manual sync → sheet "Tổng Hợp"`);
+        const tongHopResp = await fetch("/api/sync-sheets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scriptUrl, payload: tongHopPayload }),
+        });
+        const tongHopResult = await tongHopResp.json();
+        console.log(`✅ Manual sync Tổng Hợp:`, tongHopResult);
+
         await new Promise(r => setTimeout(r, 500));
       }
       setSyncStatus("SUCCESS");
@@ -311,7 +345,7 @@ export default function Home() {
             {/* PDF Header */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06]" style={{ background: 'rgba(18,18,18,0.8)' }}>
               <div>
-                <h3 className="text-xs font-bold text-white/90 tracking-wide">📄 File Công Văn Gốc</h3>
+                <h3 className="text-xs font-bold text-white/90 tracking-wide">📄 File Hợp Đồng Gốc</h3>
                 <p className="text-[10px] text-white/30 mt-0.5">Đối chiếu thông tin trực tiếp</p>
               </div>
               <div className="flex items-center gap-2">
@@ -348,6 +382,9 @@ export default function Home() {
             onUpload={handleUpload}
             status={status}
             processingText={processingText}
+            selectedProject={selectedProject}
+            onProjectChange={setSelectedProject}
+            projectOptions={projectOptions}
           />
         )}
       </div>
@@ -368,7 +405,7 @@ export default function Home() {
 
       <SettingsModal
         isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={handleSettingsClose}
         onSave={(settings) => console.log("Saved config:", settings)}
       />
     </main>

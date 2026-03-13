@@ -2,15 +2,18 @@
 
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, FileText, CheckCircle2 } from "lucide-react";
+import { Upload, FileText, CheckCircle2, ChevronDown } from "lucide-react";
 
 interface UploadPanelProps {
     onUpload: (files: File[]) => void;
     status: "IDLE" | "PROCESSING" | "SUCCESS";
     processingText: string;
+    selectedProject: string;
+    onProjectChange: (project: string) => void;
+    projectOptions: string[];
 }
 
-export default function UploadPanel({ onUpload, status, processingText }: UploadPanelProps) {
+export default function UploadPanel({ onUpload, status, processingText, selectedProject, onProjectChange, projectOptions }: UploadPanelProps) {
     const [isDragging, setIsDragging] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -75,7 +78,7 @@ export default function UploadPanel({ onUpload, status, processingText }: Upload
                             className="flex flex-col items-center text-center w-full"
                         >
                             {/* 3D-style icon */}
-                            <div className="relative mb-7">
+                            <div className="relative mb-5">
                                 <div className="w-20 h-20 rounded-2xl flex items-center justify-center animate-float"
                                     style={{
                                         background: 'linear-gradient(135deg, rgba(0,242,255,0.15) 0%, rgba(0,242,255,0.04) 100%)',
@@ -85,7 +88,6 @@ export default function UploadPanel({ onUpload, status, processingText }: Upload
                                 >
                                     <Upload className="w-9 h-9" style={{ color: '#00f2ff' }} />
                                 </div>
-                                {/* Glow ring */}
                                 <div className="absolute inset-0 rounded-2xl opacity-20 animate-pulse-glow" />
                             </div>
 
@@ -97,11 +99,39 @@ export default function UploadPanel({ onUpload, status, processingText }: Upload
                                     backgroundClip: 'text',
                                 }}
                             >
-                                Upload file PDF
+                                Upload Hợp Đồng PDF
                             </h3>
-                            <p className="text-white/40 text-sm mb-7 leading-relaxed">
-                                Kéo thả file PDF vào đây<br />hoặc click để chọn file
+                            <p className="text-white/40 text-sm mb-5 leading-relaxed">
+                                Chọn dự án, rồi kéo thả file PDF<br />hoặc click để chọn file
                             </p>
+
+                            {/* ── Project Selector Dropdown ── */}
+                            <div className="w-full mb-5 relative">
+                                <label className="block text-[10px] uppercase tracking-widest font-bold mb-2"
+                                    style={{ color: 'rgba(255,255,255,0.3)' }}>
+                                    Chọn dự án
+                                </label>
+                                <div className="relative">
+                                    <select
+                                        id="project-select"
+                                        value={selectedProject}
+                                        onChange={e => onProjectChange(e.target.value)}
+                                        className="w-full appearance-none rounded-xl px-4 py-3 pr-10 text-sm font-semibold text-white outline-none cursor-pointer transition-all focus:ring-1 focus:ring-[rgba(0,242,255,0.4)]"
+                                        style={{
+                                            background: 'rgba(255,255,255,0.06)',
+                                            border: '1px solid rgba(0,242,255,0.25)',
+                                            boxShadow: '0 0 12px rgba(0,242,255,0.06)',
+                                        }}
+                                    >
+                                        {projectOptions.map(opt => (
+                                            <option key={opt} value={opt} style={{ background: '#141414', color: '#fff' }}>
+                                                {opt}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: '#00f2ff' }} />
+                                </div>
+                            </div>
 
                             <button
                                 onClick={() => fileInputRef.current?.click()}
@@ -125,7 +155,6 @@ export default function UploadPanel({ onUpload, status, processingText }: Upload
                                 className="hidden"
                             />
 
-                            {/* Drop hint */}
                             <p className="mt-5 text-[11px] text-white/20 font-mono tracking-widest uppercase">
                                 PDF · Multi-page supported
                             </p>
@@ -140,7 +169,6 @@ export default function UploadPanel({ onUpload, status, processingText }: Upload
                             exit={{ opacity: 0 }}
                             className="flex flex-col items-center text-center w-full"
                         >
-                            {/* Animated document */}
                             <div className="relative w-28 h-36 rounded-xl flex items-center justify-center mb-8 overflow-hidden"
                                 style={{
                                     background: 'rgba(18,18,18,0.8)',
@@ -190,7 +218,7 @@ export default function UploadPanel({ onUpload, status, processingText }: Upload
                                 <CheckCircle2 className="w-10 h-10 text-emerald-400" />
                             </div>
                             <h3 className="text-xl font-bold text-white mb-1">Quét hoàn tất</h3>
-                            <p className="text-white/40 text-sm">AI đã trích xuất dữ liệu thành công.</p>
+                            <p className="text-white/40 text-sm">AI đã trích xuất dữ liệu hợp đồng thành công.</p>
                         </motion.div>
                     )}
                 </AnimatePresence>
@@ -199,7 +227,7 @@ export default function UploadPanel({ onUpload, status, processingText }: Upload
             {/* Footer */}
             <div className="absolute bottom-6 z-10 text-center">
                 <p className="text-white/15 text-[10px] font-mono tracking-widest uppercase">
-                    Upload PDF · TNEC-VT
+                    Upload PDF · TNEC-HĐ
                 </p>
             </div>
         </div>

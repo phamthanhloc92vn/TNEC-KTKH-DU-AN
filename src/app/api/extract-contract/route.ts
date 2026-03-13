@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
-// Tăng body size limit cho Next.js API route
 export const config = {
     api: {
         bodyParser: {
-            sizeLimit: '10mb',
+            sizeLimit: '15mb',
         },
     },
 };
@@ -16,8 +15,10 @@ export async function POST(request: Request) {
         const file = formData.get('file') as File;
         const pdfBase64Raw = formData.get('pdf_base64') as string;
         const apiKey = request.headers.get('x-api-key');
-        // ÉP BUỘC dùng gpt-4o để đọc PDF scan tốt nhất (bỏ qua request từ client)
-        const overrideModel = 'gpt-4o';
+        const modelFromHeader = request.headers.get('x-model');
+        const modelFromForm = formData.get('model') as string;
+        const overrideModel = modelFromHeader || modelFromForm || 'gpt-4o';
+        console.log(`🔧 Model: header=${modelFromHeader}, form=${modelFromForm}, using=${overrideModel}`);
 
         if (!apiKey) {
             return NextResponse.json({ error: 'Thiếu API key. Vào Settings để cấu hình.' }, { status: 400 });
@@ -70,118 +71,201 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Không tìm thấy dữ liệu PDF hoặc Ảnh' }, { status: 400 });
         }
 
-        // ── 3. Xây dựng prompt ────────────────────────────────────────────────
-        const systemPrompt = `Bạn là chuyên gia OCR và trích xuất dữ liệu công văn hành chính tại Việt Nam (thuộc Công ty CP Xây dựng và Lắp Máy Trung Nam - TNEC).
-Nhiệm vụ: phân tích TOÀN BỘ nội dung công văn, xác định LOẠI CÔNG VĂN, và trả về JSON chính xác.
+        // ── 3. Xây dựng prompt cho HỢP ĐỒNG ─────────────────────────────────
+        const systemPrompt = `Bạn là chuyên gia trích xuất dữ liệu HỢP ĐỒNG xây dựng tại Việt Nam.
+Công ty cần trích xuất thông tin là: **Công ty Cổ phần Xây dựng và Lắp máy Trung Nam** (viết tắt: TNEC, Trungnam E&C, TNE&C, "Trung Nam").
 
-## XÁC ĐỊNH LOẠI CÔNG VĂN
+🔴🔴🔴 CẢNH BÁO CỰC KỲ QUAN TRỌNG:
+Đây thường là HỢP ĐỒNG LIÊN DANH — có NHIỀU công ty. BẠN PHẢI lấy đúng dữ liệu của TRUNG NAM. TUYỆT ĐỐI KHÔNG lấy nhầm của công ty đối tác.
+Tên Trung Nam: "Công ty Cổ phần Xây dựng và Lắp máy Trung Nam", "Công ty CP XD và LM Trung Nam", "TNEC", "Trungnam E&C", "thành viên đứng đầu liên danh".
+## TRÍCH XUẤT CÁC TRƯỜNG (TẤT CẢ PHẢI LÀ CỦA TRUNG NAM):
 
-### "Công văn đến"
-- Góc trên TRÁI có tên đơn vị KHÁC (không phải Trung Nam/TNE&C/TNEC)
-- VD: "BỘ XÂY DỰNG", "BAN QLDA MỸ THUẬN", "UBND TỈNH...", "BAN PMUMT"
-- Văn bản do đơn vị bên ngoài GỬI ĐẾN
+1. "tenDuAn": Tên dự án / công trình / gói thầu.
+   - Ở phần đầu: "Dự án:", "Công trình:", "Gói thầu:".
 
-### "Công văn đi 1"
-- Góc trên trái: "TRUNG NAM"/"TNE&C"/"TNEC"
-- Đây là các văn bản nội bộ gồm 2 loại:
-  + **Biên bản họp** (ký hiệu: BBH) — ghi lại nội dung các cuộc họp nội bộ
-  + **Quyết định** (ký hiệu: QĐ) — các quyết định ban hành nội bộ công ty
-- Ký hiệu KHÔNG có "HĐQT" đi kèm
-- VD: "49/QĐ/TNE&C", "12/BBH/TNE&C", "05/QĐ-TNEC", "08/BBH-TNEC"
+🔴 CHIẾN THUẬT ĐỌC HIỂU (MẸO): 
+- Hãy tìm **MỤC LỤC** ở các trang đầu tiên. 
+- Nếu thấy "Tạm ứng", "Thanh toán", "Giá trị hợp đồng" ở Điều/Mục nào (VD: Mục 9, 10, Chương IV...), hãy tập trung đọc kỹ các trang tương ứng để bóc tách số liệu.
+- Mẫu "9.3. Tạm ứng" là từ khóa cực kỳ quan trọng để tìm số tiền.
 
-### "Công văn đi 1 - HĐQT"
-- Góc trên trái: "TRUNG NAM"/"TNE&C"/"TNEC"
-- Ký hiệu: BBH-HĐQT hoặc QĐ-HĐQT
-- VD: "49/025/QĐ-HĐQT/TNE&C", "12/BBH-HĐQT/TNE&C"
+2. "soHopDong": Số hợp đồng.
+   - Tìm: "Số:", "Hợp đồng số:", "HĐ số:".
 
-### "Công văn đi 2"
-- Góc trên trái: "TRUNG NAM"/"TNE&C"/"TNEC"
-- Ký hiệu: CV, BC, TB, TT hoặc khác (KHÔNG phải BBH/QĐ)
-- VD: "238/026/CV/TNE&C", "15/BC-TNE&C", "07/TB/TNEC"
+3. "donViKy": BÊN A / chủ đầu tư (KHÔNG phải Trung Nam).
+   - VD: "Ban QLDA...", "Sở...", "UBND..."
 
-## TRÍCH XUẤT 5 TRƯỜNG:
-1. "Số văn bản": Chỉ lấy phần số+ký hiệu (KHÔNG lấy chữ "Số:"). 
-   - ⚠️ LƯU Ý FILE SCAN: Chữ "Số:" và ký hiệu thường bị cách rất xa nhau (VD: "Số: 71      /PMUMT-ĐHDA1"). Hãy ghép chúng lại thành "71/PMUMT-ĐHDA1".
-   - Nếu là văn bản không có số mà chỉ có ký hiệu, lấy đúng ký hiệu đó.
-2. "Ngày văn bản": Tìm ngày ban hành ở góc trên (thường nằm cạnh Quốc hiệu "Độc lập - Tự do - Hạnh phúc"). 
-   - Nó thường được in nghiêng dạng: "Thành phố Hồ Chí Minh, ngày 04 tháng 3 năm 2026" hoặc "TP.HCM, ngày 06 tháng 03 năm 2026".
-   - BẮT BUỘC đổi sang định dạng DD/MM/YYYY (VD: "04/03/2026").
-   - Nếu bị mờ không đọc được ngày cụ thể, hãy cố gắng suy luận từ tháng/năm. Nếu hoàn toàn không có, trả về "N/A" (TUYỆT ĐỐI không trả về chuỗi "DD/MM/YYYY").
-3. "Tóm nội dung chính": Nội dung sau "V/v" hoặc "Về việc". Tóm lược ngắn gọn.
-4. "Đơn vị gửi đến": Cơ quan ban hành (góc trái trên)
-5. "Người nhận": Phần "Kính gửi"
+92. 🔴 QUY TẮC TIỀN TỆ: Luôn định dạng số tiền kết thúc bằng chữ " đồng".
+93:    - Thay thế "VND", "VNĐ", "V.N.Đ" bằng " đồng".
+94:    - VD: "1.000.000 VND" → "1.000.000 đồng" ✅
+
+4. "giaTri": 🔴 GIÁ TRỊ HỢP ĐỒNG CỦA TRUNG NAM (KHÔNG phải tổng, KHÔNG phải của đối tác).
+   - Nếu HĐ liên danh: tìm giá trị RIÊNG của Trung Nam = tổng giá trị × tỉ lệ Trung Nam.
+   - Thường ghi dạng: "Giá trị hợp đồng XX% là YYY VND" ở dòng gắn với Trung Nam.
+   VD THỰC TẾ:
+   "a). Thành viên đứng đầu liên danh: Công ty CP Xây dựng và Lắp máy Trung Nam
+    + Giá trị hợp đồng 87% là 95.092.891.627 VND"
+   → giaTri = "95.092.891.627 đồng" ✅
+   "b). Thành viên còn lại: Công ty CP CE Việt Nam
+    + Giá trị hợp đồng 13% là 14.213.297.744 VND"
+   → ĐÂY LÀ CỦA CE VIỆT NAM → KHÔNG LẤY!
+   - Nếu HĐ không liên danh (chỉ 1 bên): lấy tổng giá trị hợp đồng và đổi đuôi sang " đồng".
+
+5. "tiLeHopDong": 🔴 TỶ LỆ CỦA TRUNG NAM (KHÔNG phải đối tác).
+   - Nếu loaiHopDong là "NHA_THAU_PHU" → Luôn để là "100%" (vì TNEC thuê thầu phụ làm trọn gói phần việc đó).
+   - Nếu loaiHopDong là "CHU_DAU_TU":
+     - Tìm trong: bảng "phân công phạm vi", "tỉ lệ liên danh", "tỉ lệ đảm nhận".
+     - HOẶC tìm câu dạng: "Giá trị hợp đồng XX%" ở dòng có TRUNG NAM.
+     VD THỰC TẾ:
+     "a). Trung Nam: + Giá trị hợp đồng 87% là..."  → tiLeHopDong = "87%"
+     "b). CE Việt Nam: + Giá trị hợp đồng 13% là..." → KHÔNG LẤY 13%!
+   - 🔴 PHẢI kiểm tra dòng phía trên có chứa "Trung Nam" không.
+
+6. "daTamUng": 🔴 TẠM ỨNG CỦA TRUNG NAM (KHÔNG phải tổng, KHÔNG phải đối tác).
+   - Tìm ở mục "Tạm ứng" (Điều 9, 10, 9.3, hoặc phần "Thanh toán").
+   - 🔴 CẢNH BÁO: Trong bản quét, "9.3. Tạm ứng" có thể ghi số tiền cụ thể ngay trong câu. Hãy đọc kỹ từng con số.
+   VD THỰC TẾ:
+   "...tạm ứng cho Bên B 30% giá trị hợp đồng tương ứng với số tiền là 1.952.408.185 VND"
+   → daTamUng = "1.952.408.185 đồng" ✅
+   - Dạng khác: "- Trung Nam: 16.997.650.451 đồng" → lấy số này.
+   - Dạng khác: "Bảo lãnh tạm ứng" + số tiền gắn Trung Nam.
+   - Luôn dùng đuôi " đồng". Nếu là "N/A" thì giữ nguyên.
+
+7. "thuHoiTamUng": Thu hồi tạm ứng (nếu có). Không thấy → "N/A".
+
+8. "conLaiChuaThuHoi": Tạm ứng chưa thu hồi. Không thấy → "N/A".
+
+1. "donViKy": 🔴 Tên đơn vị đối tác ký hợp đồng VỚI Trung Nam:
+   - Nếu HĐ là "Chủ đầu tư" ký với "Trung Nam" → Lấy tên Chủ đầu tư.
+   - Nếu HĐ là "Trung Nam" ký với "Nhà thầu phụ" (Bên B) → Lấy tên Nhà thầu phụ.
+   - ⚠️ TUYỆT ĐỐI KHÔNG lấy tên Trung Nam (TNEC) vào ô này.
+
+... (bỏ qua các mục 2-8)
+
+9. "loaiHopDong": 🔴 PHÂN LOẠI HỢP ĐỒNG (CỰC KỲ QUAN TRỌNG):
+   CÁCH XÁC ĐỊNH: Nhìn vào ĐỐI TÁC (donViKy) ký với Trung Nam:
+
+   ✅ "CHU_DAU_TU" — Nếu ĐỐI TÁC là CƠ QUAN NHÀ NƯỚC:
+      Từ khóa: "Ban Quản lý", "Ban QLDA", "Sở", "UBND", "Khu kinh tế", "tỉnh", "thành phố", "huyện", "Bộ".
+      Ý nghĩa: Trung Nam đi làm thuê cho Nhà nước.
+
+   ✅ "NHA_THAU_PHU" — Nếu ĐỐI TÁC là CÔNG TY TƯ NHÂN (HĐ B-B'):
+      Từ khóa: "Công ty TNHH", "Công ty CP", "Công ty cổ phần", "Tập đoàn".
+      Tiêu đề thường gặp: "Hợp đồng thi công", "Hợp đồng giao khoán", "Hợp đồng thầu phụ".
+      Ý nghĩa: Trung Nam thuê công ty khác làm (hoặc ký ngang hàng giữa 2 công ty tư nhân).
+      VD THỰC TẾ: "Công ty TNHH Giải pháp Môi trường Đại Nam" → NHA_THAU_PHU ✅
+
+   🔴 NGUYÊN TẮC VÀNG: Nếu đối tác là DOANH NGHIỆP/CÔNG TY tư nhân → Luôn là "NHA_THAU_PHU".
+
+## 🔴 CHECKLIST BẮT BUỘC TRƯỚC KHI TRẢ KẾT QUẢ:
+□ giaTri → Đây có phải giá trị của TRUNG NAM không? (KHÔNG phải tổng, KHÔNG phải đối tác)
+□ tiLeHopDong → % này gắn với dòng "Trung Nam" chưa? Hay nhầm sang công ty khác?
+□ daTamUng → Số tiền này gắn với "Trung Nam" chưa? Hay nhầm sang đối tác/tổng?
+□ loaiHopDong → donViKy là cơ quan nhà nước (CHU_DAU_TU) hay công ty tư nhân (NHA_THAU_PHU)?
+→ Nếu sai → TÌM LẠI dòng Trung Nam.
+
+## LƯU Ý:
+- Đọc KỸ toàn bộ hợp đồng và phụ lục.
+- Giữ nguyên format số (dấu chấm phân cách).
 
 ## JSON BẮT BUỘC:
 {
   "data": {
-    "Loại công văn": "Công văn đến" | "Công văn đi 1" | "Công văn đi 1 - HĐQT" | "Công văn đi 2",
-    "Số văn bản": "...",
-    "Ngày văn bản": "04/03/2026",
-    "Tóm nội dung chính": "...",
-    "Đơn vị gửi đến": "...",
-    "Người nhận": "..."
+    "tenDuAn": "...",
+    "soHopDong": "...",
+    "donViKy": "...",
+    "giaTri": "...",
+    "tiLeHopDong": "...",
+    "daTamUng": "...",
+    "thuHoiTamUng": "...",
+    "conLaiChuaThuHoi": "...",
+    "loaiHopDong": "CHU_DAU_TU" hoặc "NHA_THAU_PHU"
   },
   "validationScores": {
-    "Loại công văn": 95,
-    "Số văn bản": 90,
-    "Ngày văn bản": 90,
-    "Tóm nội dung chính": 88,
-    "Đơn vị gửi đến": 85,
-    "Người nhận": 85
+    "tenDuAn": 0-100,
+    "soHopDong": 0-100,
+    "donViKy": 0-100,
+    "giaTri": 0-100,
+    "tiLeHopDong": 0-100,
+    "daTamUng": 0-100,
+    "thuHoiTamUng": 0-100,
+    "conLaiChuaThuHoi": 0-100
   }
 }`;
 
         // ── 4. Xây dựng user message ──────────────────────────────────────────
+        // Chiến lược: Nếu pdf2json trích được đủ text → CHỈ GỬI TEXT (tiết kiệm token)
+        // Nếu PDF scan không có text → gửi ảnh
         const userContent: any[] = [];
+        const hasEnoughText = extractedText && extractedText.trim().length > 5000;
 
-        if (extractedText && extractedText.trim().length > 100) {
+        if (hasEnoughText) {
+            // TEXT-ONLY MODE: Gửi PHẦN ĐẦU + PHẦN CUỐI để bao phủ cả thanh toán/tạm ứng
+            const totalLen = extractedText.length;
+            const headChars = 30000;
+            const tailChars = 25000;
+
+            let textToSend: string;
+            if (totalLen <= headChars + tailChars) {
+                // Hợp đồng ngắn: gửi toàn bộ
+                textToSend = extractedText;
+            } else {
+                // Hợp đồng dài: đầu + cuối
+                const head = extractedText.substring(0, headChars);
+                const tail = extractedText.substring(totalLen - tailChars);
+                textToSend = head + "\n\n[...PHẦN GIỮA ĐÃ BỎ QUA...]\n\n" + tail;
+            }
+
             userContent.push({
                 type: "text",
-                text: `VĂN BẢN TRÍCH XUẤT TỪ PDF (${extractedText.length} ký tự):\n\n${extractedText.substring(0, 50000)}`
+                text: `NỘI DUNG HỢP ĐỒNG (${totalLen} ký tự tổng, gửi ${textToSend.length} ký tự — phần đầu + phần cuối):\n\n${textToSend}`
             });
-        }
-
-        // ── 4b. Thêm ảnh vào user message nếu có ─────────────────────────────
-        if (hasImages) {
+            console.log(`📝 TEXT-ONLY mode: gửi ${textToSend.length} ký tự (head ${headChars} + tail ${tailChars}) từ tổng ${totalLen}`);
+        } else if (hasImages) {
+            // IMAGE MODE: PDF scan — gửi TẤT CẢ ảnh (detail:low = ~85 tokens/ảnh)
             userContent.push({
                 type: "text",
-                text: "Dưới đây là hình ảnh các trang của văn bản được scan. Hãy ĐỌC KỸ TỪNG CHỮ trong ảnh, đặc biệt là phần Số văn bản và Ngày văn bản ở đầu trang:"
+                text: `PDF scan (${pageImages.length} trang). ĐỌC KỸ TỪNG TRANG, đặc biệt phần Giá hợp đồng, Tỷ lệ liên danh, và Tạm ứng (thường ở Điều 9-10, giữa hợp đồng). Lấy đúng dữ liệu của TRUNG NAM:`
             });
             for (const img of pageImages) {
-                // Đảm bảo định dạng chuẩn data URI cho hình ảnh
                 const imageUrl = img.startsWith("data:") ? img : `data:image/jpeg;base64,${img}`;
                 userContent.push({
                     type: "image_url",
-                    image_url: { url: imageUrl, detail: "high" } // Dùng detail high để soi rõ chữ Mờ/Nhỏ
+                    image_url: {
+                        url: imageUrl,
+                        detail: "high" // Sử dụng detail cao để AI đọc được số nhỏ trong bản quét
+                    }
                 });
             }
-        } else if (userContent.length === 0) {
-            // Nếu không có text và không có ảnh → báo lỗi
+            console.log(`📸 IMAGE mode: gửi TẤT CẢ ${pageImages.length} ảnh (detail:high)`);
+        } else {
             return NextResponse.json({
-                error: 'Không nhận diện được nội dung công văn. File PDF có thể là ảnh scan không có text layer.'
+                error: 'Không nhận diện được nội dung hợp đồng. File PDF có thể bị lỗi.'
             }, { status: 400 });
         }
 
-        console.log(`🤖 Dùng Chat Completions (Vision: ${hasImages}, Text-parts: ${userContent.length})`);
+        console.log(`🤖 Model: ${overrideModel}, Mode: ${hasEnoughText ? 'TEXT' : 'IMAGE'}, Parts: ${userContent.length}`);
 
+        // o4-mini là reasoning model, không hỗ trợ response_format hay system role
+        const isReasoningModel = overrideModel.startsWith('o');
+        
         const completion = await openai.chat.completions.create({
             model: overrideModel,
-            response_format: { type: "json_object" },
+            ...(isReasoningModel ? {} : { response_format: { type: "json_object" } }),
+            ...(isReasoningModel ? {} : { max_tokens: 2000 }),
             messages: [
-                { role: "system", content: systemPrompt },
+                { role: isReasoningModel ? "developer" : "system", content: systemPrompt },
                 { role: "user", content: userContent }
             ]
         });
 
         const resultText = completion.choices[0].message.content || "{}";
         const result = JSON.parse(resultText);
-        console.log("✅ AI Response (Chat):", JSON.stringify(result, null, 2));
+        console.log("✅ AI Response (Contract):", JSON.stringify(result, null, 2));
         return NextResponse.json(result);
 
     } catch (error: unknown) {
         console.error('❌ API error:', error);
         const msg = error instanceof Error ? error.message : 'Internal Server Error';
-        // Trả message rõ ràng
         if (msg.includes('API key')) {
             return NextResponse.json({ error: 'API key không hợp lệ. Kiểm tra lại trong Settings.' }, { status: 400 });
         }

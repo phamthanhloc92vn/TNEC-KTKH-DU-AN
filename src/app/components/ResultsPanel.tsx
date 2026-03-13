@@ -4,32 +4,34 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { ExternalLink, Save, Check, Sheet, AlertCircle, CheckCircle2 } from "lucide-react";
 
-interface CongVanData {
-    "Loại công văn": string;
-    "Số văn bản": string;
-    "Ngày văn bản": string;
-    "Tóm nội dung chính": string;
-    "Đơn vị gửi đến": string;
-    "Người nhận": string;
-    "Ngày/Tháng": string;
-    "Tên File CV": string;
+interface HopDongData {
+    stt: string;
+    tenDuAn: string;
+    soHopDong: string;
+    donViKy: string;
+    giaTri: string;
+    tiLeHopDong: string;
+    daTamUng: string;
+    thuHoiTamUng: string;
+    conLaiChuaThuHoi: string;
+    loaiHopDong: string;
+    tenFileHD: string;
 }
 
 interface ValidationScores { [key: string]: number; }
 
 interface ResultsPanelProps {
-    dataList: CongVanData[];
+    dataList: HopDongData[];
     validationScoresList?: ValidationScores[];
     previews?: string[];
     fileUrls?: string[];
     selectedPdfIndex?: number;
     onSelectPdf?: (i: number) => void;
-    onUpdate: (index: number, data: CongVanData) => void;
+    onUpdate: (index: number, data: HopDongData) => void;
     onSync: () => void;
     syncStatus: "IDLE" | "SYNCING" | "SUCCESS";
 }
 
-// ── token shortcuts ──────────────────────────────────────────────────────────
 const BG_SURFACE = 'rgba(14,14,14,0.96)';
 const BG_CARD = 'rgba(18,18,18,0.80)';
 const BORDER_DIM = '1px solid rgba(255,255,255,0.07)';
@@ -47,10 +49,9 @@ export default function ResultsPanel({
     onSync,
     syncStatus,
 }: ResultsPanelProps) {
-    const [editCell, setEditCell] = useState<{ index: number; field: keyof CongVanData } | null>(null);
+    const [editCell, setEditCell] = useState<{ index: number; field: keyof HopDongData } | null>(null);
     const [tempValue, setTempValue] = useState("");
 
-    /* ── Empty state ─────────────────────────────────────────────────────── */
     if (!dataList || dataList.length === 0) {
         return (
             <div className="h-full w-full flex flex-col items-center justify-center p-16 text-center"
@@ -61,7 +62,6 @@ export default function ResultsPanel({
                     transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
                     className="max-w-2xl"
                 >
-                    {/* 3D ghost icon */}
                     <div className="w-24 h-24 rounded-3xl mx-auto mb-10 flex items-center justify-center animate-float"
                         style={{
                             background: 'rgba(18,18,18,0.8)',
@@ -80,29 +80,30 @@ export default function ResultsPanel({
                             backgroundClip: 'text',
                         }}
                     >
-                        Tự Động Trích Xuất Dữ Liệu Công Văn.
+                        Tự Động Trích Xuất Dữ Liệu Hợp Đồng.
                     </h1>
                     <p className="text-lg font-medium" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                        Kéo thả file PDF công văn vào vùng bên trái để AI bắt đầu xử lý ngay lập tức.
+                        Kéo thả file PDF hợp đồng vào vùng bên trái để AI bắt đầu xử lý ngay lập tức.
                     </p>
                 </motion.div>
             </div>
         );
     }
 
-    /* ── Field config ────────────────────────────────────────────────────── */
-    const fields: { key: keyof CongVanData; label: string }[] = [
-        { key: "Loại công văn", label: "LOẠI CÔNG VĂN" },
-        { key: "Ngày/Tháng", label: "NGÀY/THÁNG" },
-        { key: "Số văn bản", label: "SỐ VĂN BẢN" },
-        { key: "Ngày văn bản", label: "NGÀY VĂN BẢN" },
-        { key: "Tóm nội dung chính", label: "TÓM NỘI DUNG CHÍNH" },
-        { key: "Đơn vị gửi đến", label: "ĐƠN VỊ GỬI ĐẾN / ĐI" },
-        { key: "Người nhận", label: "NGƯỜI NHẬN" },
-        { key: "Tên File CV", label: "TÊN FILE" },
+    const fields: { key: keyof HopDongData; label: string }[] = [
+        { key: "stt", label: "STT" },
+        { key: "tenDuAn", label: "TÊN DỰ ÁN" },
+        { key: "soHopDong", label: "SỐ HỢP ĐỒNG" },
+        { key: "donViKy", label: "ĐƠN VỊ KÝ" },
+        { key: "giaTri", label: "GIÁ TRỊ HĐ" },
+        { key: "tiLeHopDong", label: "TỈ LỆ HĐ" },
+        { key: "daTamUng", label: "ĐÃ TẠM ỨNG" },
+        { key: "thuHoiTamUng", label: "THU HỒI TƯ" },
+        { key: "conLaiChuaThuHoi", label: "CÒN LẠI TƯ" },
+        { key: "tenFileHD", label: "TÊN FILE" },
     ];
 
-    const handleEdit = (index: number, field: keyof CongVanData) => {
+    const handleEdit = (index: number, field: keyof HopDongData) => {
         setEditCell({ index, field });
         setTempValue(dataList[index][field] || "");
     };
@@ -117,12 +118,12 @@ export default function ResultsPanel({
         <div className="h-full w-full flex flex-col p-6 overflow-auto text-white"
             style={{ background: BG_SURFACE, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
 
-            {/* ── Header ─────────────────────────────────────────────────── */}
+            {/* Header */}
             <div className="flex items-center justify-between mb-6 flex-shrink-0">
                 <div>
-                    <h2 className="text-xl font-bold tracking-tight text-white">Xác minh công văn</h2>
+                    <h2 className="text-xl font-bold tracking-tight text-white">Xác minh hợp đồng</h2>
                     <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                        Xem lại và xác nhận dữ liệu trước khi đồng bộ
+                        Xem lại và xác nhận dữ liệu trước khi đồng bộ Google Sheets
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -149,7 +150,7 @@ export default function ResultsPanel({
                 </div>
             </div>
 
-            {/* ── Body: Sidebar + Table ──────────────────────────────────── */}
+            {/* Body: Sidebar + Table */}
             <div className="flex gap-5 items-start flex-1 min-h-0 overflow-hidden">
 
                 {/* Left sidebar */}
@@ -157,7 +158,6 @@ export default function ResultsPanel({
                     <div className="rounded-2xl p-4 flex flex-col gap-3"
                         style={{ background: BG_CARD, border: BORDER_DIM, boxShadow: '0 0 0 1px rgba(0,242,255,0.03), 0 20px 40px rgba(0,0,0,0.5)' }}
                     >
-                        {/* Status icon */}
                         <div className="flex flex-col items-center text-center pb-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
                             <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3"
                                 style={{ background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.25)', boxShadow: '0 0 20px rgba(59,130,246,0.2)' }}
@@ -166,7 +166,7 @@ export default function ResultsPanel({
                             </div>
                             <p className="text-sm font-bold text-white">Quét hoàn tất</p>
                             <p className="text-[10px] mt-1" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                                AI trích xuất thành công
+                                AI trích xuất hợp đồng thành công
                             </p>
                         </div>
 
@@ -192,9 +192,11 @@ export default function ResultsPanel({
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <p className="text-[11px] font-semibold truncate text-white/80">
-                                            {data["Số văn bản"] !== "N/A" ? data["Số văn bản"] : `File ${idx + 1}`}
+                                            {data.soHopDong !== "N/A" ? data.soHopDong : `HĐ ${idx + 1}`}
                                         </p>
-                                        <p className="text-[9px] mt-0.5" style={{ color: 'rgba(255,255,255,0.25)' }}>98% confidence</p>
+                                        <p className="text-[9px] mt-0.5" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                                            {data.donViKy !== "N/A" ? data.donViKy : "Đang xử lý..."}
+                                        </p>
                                     </div>
                                     {previews[idx] && (
                                         <div className="w-8 h-10 rounded flex-shrink-0 overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
@@ -209,7 +211,7 @@ export default function ResultsPanel({
                         <div className="grid grid-cols-2 gap-2 pt-3 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
                             <div className="p-2.5 rounded-xl text-center" style={{ background: 'rgba(255,255,255,0.03)', border: BORDER_DIM }}>
                                 <p className="text-[8px] uppercase tracking-widest mb-1" style={{ color: 'rgba(255,255,255,0.2)' }}>Trường</p>
-                                <p className="text-lg font-bold text-blue-400">{dataList.length * 7}</p>
+                                <p className="text-lg font-bold text-blue-400">{dataList.length * 9}</p>
                             </div>
                             <div className="p-2.5 rounded-xl text-center" style={{ background: 'rgba(255,255,255,0.03)', border: BORDER_DIM }}>
                                 <p className="text-[8px] uppercase tracking-widest mb-1" style={{ color: 'rgba(255,255,255,0.2)' }}>Tiết kiệm</p>
@@ -233,7 +235,7 @@ export default function ResultsPanel({
                     </div>
                 </div>
 
-                {/* ── Data Table ─────────────────────────────────────────── */}
+                {/* Data Table */}
                 <div className="flex-grow overflow-auto h-full">
                     <div className="rounded-2xl overflow-hidden"
                         style={{
@@ -287,24 +289,13 @@ export default function ResultsPanel({
                                                     />
                                                 ) : (
                                                     <div className="flex items-center gap-2">
-                                                        {f.key === "Loại công văn" ? (
-                                                            <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap" style={{
-                                                                ...(data[f.key] === "Công văn đến" ? { background: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)' } :
-                                                                    data[f.key] === "Công văn đi 1" ? { background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)' } :
-                                                                        data[f.key] === "Công văn đi 1 - HĐQT" ? { background: 'rgba(168,85,247,0.15)', color: '#a78bfa', border: '1px solid rgba(168,85,247,0.3)' } :
-                                                                            data[f.key] === "Công văn đi 2" ? { background: 'rgba(251,146,60,0.15)', color: '#fb923c', border: '1px solid rgba(251,146,60,0.3)' } :
-                                                                                { background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.3)', border: '1px solid rgba(255,255,255,0.1)' })
-                                                            }}>
-                                                                {data[f.key] || "N/A"}
-                                                            </span>
-                                                        ) : (
-                                                            <span className="text-sm leading-relaxed" style={{
-                                                                color: (!data[f.key] || data[f.key] === "N/A") ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.88)',
-                                                                fontStyle: (!data[f.key] || data[f.key] === "N/A") ? 'italic' : 'normal',
-                                                            }}>
-                                                                {data[f.key] || "N/A"}
-                                                            </span>
-                                                        )}
+                                                        <span className="text-sm leading-relaxed" style={{
+                                                            color: (!data[f.key] || data[f.key] === "N/A") ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.88)',
+                                                            fontStyle: (!data[f.key] || data[f.key] === "N/A") ? 'italic' : 'normal',
+                                                            fontWeight: f.key === "giaTri" ? 600 : 400,
+                                                        }}>
+                                                            {data[f.key] || "N/A"}
+                                                        </span>
                                                         <div className="w-1.5 h-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
                                                             style={{ background: CYAN, boxShadow: `0 0 8px ${CYAN}` }} />
                                                     </div>

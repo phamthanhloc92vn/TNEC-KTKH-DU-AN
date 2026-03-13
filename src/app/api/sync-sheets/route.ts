@@ -12,9 +12,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Missing payload' }, { status: 400 });
         }
 
-        console.log(`📤 Server sync → "${payload["Loại công văn"]}" → ${scriptUrl.substring(0, 60)}...`);
+        const sheetName = payload.sheetName || "Tổng Hợp";
+        console.log(`📤 Server sync → sheet "${sheetName}" (HĐ: ${payload.soHopDong || "N/A"}) → ${scriptUrl.substring(0, 60)}...`);
 
-        // Gửi từ server → KHÔNG bị CORS, KHÔNG bị redirect mất body
+        // Forward payload to Google Apps Script — no CORS issues from server
         const response = await fetch(scriptUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },

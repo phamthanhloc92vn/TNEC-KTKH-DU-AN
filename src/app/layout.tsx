@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "TNEC-VT",
-  description: "Upload và phân tích văn thư PDF.",
+  title: "TNEC-HĐ",
+  description: "Tự động trích xuất dữ liệu hợp đồng.",
 };
 
 import Script from "next/script";
