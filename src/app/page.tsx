@@ -110,27 +110,23 @@ export default function Home() {
             useSystemFonts: true,
           }).promise;
 
-          // 800px hard cap: mỗi trang ~60-80KB → 40 trang ~3.2MB, an toàn dưới Vercel 4.5MB
+          // Render ALL trang với chất lượng CAO (1200px, quality 0.6)
+          // Sẽ gửi theo từng lô 10 ảnh để tránh Vercel 4.5MB limit
           const totalPages = pdf.numPages;
           const MAX_READ = 40;
+          const MAX_WIDTH = 1200; // Tăng lên 1200px cho AI đọc số rõ hơn
+          const QUALITY = 0.6;   // Chất lượng cao hơn
           const pagesToRender: number[] = [];
           
           for (let p = 1; p <= Math.min(totalPages, MAX_READ); p++) {
             pagesToRender.push(p);
           }
-          
-          // Nếu HĐ dài hơn 15 trang, thêm trang cuối để bắt chữ ký
           if (totalPages > MAX_READ) {
-            const lastPage = totalPages;
-            if (!pagesToRender.includes(lastPage)) pagesToRender.push(lastPage);
+            if (!pagesToRender.includes(totalPages)) pagesToRender.push(totalPages);
           }
           
-          console.log(`📄 PDF: ${totalPages} trang, gửi ${pagesToRender.length} trang (Vercel limit)`);
+          console.log(`📄 PDF: ${totalPages} trang, render ${pagesToRender.length} trang (1200px, quality ${QUALITY})`);
 
-          // 800px hard cap + adaptive quality: đảm bảo TỔNG payload < 3.5MB
-          const MAX_WIDTH = 800;
-          const MAX_PAYLOAD_BYTES = 3.5 * 1024 * 1024; // 3.5MB an toàn dưới Vercel 4.5MB
-          
           for (const p of pagesToRender) {
             setProcessingText(`Đang render trang ${p}/${totalPages}...`);
             const page = await pdf.getPage(p);
@@ -144,32 +140,13 @@ export default function Home() {
 
             if (ctx) {
               await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-              // Bắt đầu với quality 0.4, giảm nếu payload vượt giới hạn
-              let quality = 0.4;
-              let dataUrl = canvas.toDataURL("image/jpeg", quality);
-              
-              // Tính tổng payload hiện tại
-              const currentTotal = pageImages.reduce((sum, img) => sum + img.length, 0);
-              
-              // Nếu thêm trang này mà vượt giới hạn → giảm quality
-              while (currentTotal + dataUrl.length > MAX_PAYLOAD_BYTES && quality > 0.15) {
-                quality -= 0.05;
-                dataUrl = canvas.toDataURL("image/jpeg", quality);
-              }
-              
-              // Nếu vẫn vượt giới hạn → bỏ qua trang này (giữ trang quan trọng)
-              if (currentTotal + dataUrl.length > MAX_PAYLOAD_BYTES && pageImages.length >= 10) {
-                console.warn(`⚠️ Bỏ trang ${p} do payload gần giới hạn (${Math.round((currentTotal + dataUrl.length) / 1024 / 1024 * 100) / 100}MB)`);
-                continue;
-              }
-              
+              const dataUrl = canvas.toDataURL("image/jpeg", QUALITY);
               pageImages.push(dataUrl);
               if (p === 1) previewBase64 = dataUrl;
             }
           }
           
-          const totalPayload = pageImages.reduce((sum, img) => sum + img.length, 0);
-          console.log(`📤 Tổng payload: ${Math.round(totalPayload / 1024)}KB (${pageImages.length} trang), giới hạn: ${Math.round(MAX_PAYLOAD_BYTES / 1024)}KB`);
+          console.log(`📤 Render xong ${pageImages.length} trang`);
         } catch (pdfErr) {
           console.error("❌ Lỗi render PDF sang ảnh:", pdfErr);
         }
@@ -177,51 +154,132 @@ export default function Home() {
         newPreviews.push(previewBase64);
         setPreviews([...newPreviews]);
 
-        // 2. Send to AI
+        // 2. Gửi AI theo TỪNG LÔ (chunk) để tránh Vercel 4.5MB limit
         const selectedModel = settings.model || "gpt-4o";
-        console.log(`🤖 Model đang dùng: ${selectedModel}`);
-        setProcessingText(`Đang gửi lên AI (${selectedModel}) để phân tích hợp đồng...`);
-        const formData = new FormData();
-        formData.append("model", selectedModel);
+        console.log(`🤖 Model: ${selectedModel}`);
+        
+        let result: any = null;
+
         if (pageImages.length > 0) {
-          // Có ảnh → KHÔNG gửi file PDF gốc (tránh 413 trên Vercel)
-          // File PDF scan có thể 10-30MB, vượt giới hạn 4.5MB của Vercel
-          pageImages.forEach((img, idx) => {
-            formData.append(`image_page_${idx + 1}`, img);
-          });
-          formData.append("total_pages_sent", String(pageImages.length));
-          console.log(`📤 Gửi ${pageImages.length} ảnh (KHÔNG gửi file gốc để tránh 413)`);
+          // Chia ảnh thành các lô 10 trang
+          const CHUNK_SIZE = 10;
+          const chunks: string[][] = [];
+          for (let i = 0; i < pageImages.length; i += CHUNK_SIZE) {
+            chunks.push(pageImages.slice(i, i + CHUNK_SIZE));
+          }
+          
+          console.log(`📦 Chia ${pageImages.length} ảnh → ${chunks.length} lô (mỗi lô ${CHUNK_SIZE} ảnh)`);
+          
+          let bestResult: any = null;
+          let bestScore = -1;
+          
+          for (let c = 0; c < chunks.length; c++) {
+            const chunk = chunks[c];
+            const startPage = c * CHUNK_SIZE + 1;
+            setProcessingText(`Đang gửi AI lô ${c + 1}/${chunks.length} (trang ${startPage}-${startPage + chunk.length - 1})...`);
+            
+            const formData = new FormData();
+            formData.append("model", selectedModel);
+            chunk.forEach((img, idx) => {
+              formData.append(`image_page_${idx + 1}`, img);
+            });
+            formData.append("total_pages_sent", String(chunk.length));
+            formData.append("chunk_info", `Lô ${c + 1}/${chunks.length}, trang ${startPage}-${startPage + chunk.length - 1}`);
+            
+            try {
+              const response = await fetch("/api/extract-contract", {
+                method: "POST",
+                headers: {
+                  "x-api-key": settings.apiKey,
+                  "x-model": selectedModel
+                },
+                body: formData
+              });
+              
+              const responseText = await response.text();
+              let chunkResult;
+              try {
+                chunkResult = JSON.parse(responseText || "{}");
+              } catch (e) {
+                console.warn(`⚠️ Lô ${c + 1} trả về JSON lỗi, bỏ qua`);
+                continue;
+              }
+              
+              if (!response.ok) {
+                console.warn(`⚠️ Lô ${c + 1} lỗi ${response.status}: ${chunkResult.error}`);
+                continue;
+              }
+              
+              // Tính điểm: đếm số trường KHÔNG phải N/A
+              const data = chunkResult.data || {};
+              let score = 0;
+              const importantFields = ["giaTri", "daTamUng", "tiLeHopDong", "soHopDong", "donViKy"];
+              importantFields.forEach(f => {
+                if (data[f] && data[f] !== "N/A" && data[f] !== "") score += 2;
+              });
+              // Các trường khác
+              Object.values(data).forEach((v: any) => {
+                if (v && v !== "N/A" && v !== "") score += 1;
+              });
+              
+              console.log(`📊 Lô ${c + 1}: ${score} điểm (giaTri=${data.giaTri}, daTamUng=${data.daTamUng})`);
+              
+              // Giữ kết quả tốt nhất
+              if (score > bestScore) {
+                bestScore = score;
+                bestResult = chunkResult;
+              }
+              
+              // Nếu đã có kết quả tốt nhất có giá trị + tạm ứng → dừng sớm
+              if (data.giaTri && data.giaTri !== "N/A" && data.daTamUng && data.daTamUng !== "N/A") {
+                console.log(`✅ Lô ${c + 1} đủ dữ liệu, merge kết quả tốt nhất`);
+              }
+              
+              // Merge: nếu bestResult thiếu trường nhưng lô sau có → bổ sung
+              if (bestResult && bestResult.data && chunkResult.data) {
+                Object.entries(chunkResult.data).forEach(([key, value]: [string, any]) => {
+                  if ((!bestResult.data[key] || bestResult.data[key] === "N/A" || bestResult.data[key] === "") 
+                      && value && value !== "N/A" && value !== "") {
+                    bestResult.data[key] = value;
+                    console.log(`🔀 Merge: ${key} = ${value} (từ lô ${c + 1})`);
+                  }
+                });
+              }
+              
+            } catch (fetchErr) {
+              console.warn(`⚠️ Lô ${c + 1} lỗi fetch:`, fetchErr);
+            }
+          }
+          
+          if (!bestResult || !bestResult.data) {
+            throw new Error("Tất cả lô đều thất bại. Kiểm tra API key và kết nối.");
+          }
+          result = bestResult;
         } else {
-          // Fallback: ảnh render thất bại → gửi file PDF gốc
+          // Fallback: không có ảnh → gửi file PDF gốc
+          setProcessingText(`Đang gửi lên AI (${selectedModel}) — fallback PDF gốc...`);
+          const formData = new FormData();
           formData.append("file", file);
+          formData.append("model", selectedModel);
           const pdfBase64 = await new Promise<string>((resolve) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result as string);
             reader.readAsDataURL(file);
           });
           formData.append("pdf_base64", pdfBase64);
-          console.warn("⚠️ Canvas failed. Fallback: sending raw PDF.");
-        }
-
-        const response = await fetch("/api/extract-contract", {
-          method: "POST",
-          headers: {
-            "x-api-key": settings.apiKey,
-            "x-model": settings.model || "gpt-4o"
-          },
-          body: formData
-        });
-
-        const responseText = await response.text();
-        let result;
-        try {
-          result = JSON.parse(responseText || "{}");
-        } catch (e) {
-          throw new Error(`API Error (HTTP ${response.status}): Server did not return valid JSON.`);
-        }
-
-        if (!response.ok) {
-          throw new Error(result.error || `Server error ${response.status}`);
+          
+          const response = await fetch("/api/extract-contract", {
+            method: "POST",
+            headers: { "x-api-key": settings.apiKey, "x-model": selectedModel },
+            body: formData
+          });
+          const responseText = await response.text();
+          let parsed;
+          try { parsed = JSON.parse(responseText || "{}"); } catch (e) {
+            throw new Error(`API Error (HTTP ${response.status}): Invalid JSON.`);
+          }
+          if (!response.ok) throw new Error(parsed.error || `Server error ${response.status}`);
+          result = parsed;
         }
 
         // Inject STT (auto-increment) and filename
