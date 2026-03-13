@@ -148,23 +148,14 @@ export default function Home() {
             }
           }
           
-          // Adaptive quality: giảm quality cho đến khi tổng < 3.5MB
-          const MAX_PAYLOAD = 3.5 * 1024 * 1024;
-          let quality = 0.5;
-          
-          while (quality >= 0.2) {
-            pageImages.length = 0;
-            for (const canvas of canvases) {
-              pageImages.push(canvas.toDataURL("image/jpeg", quality));
-            }
-            const totalSize = pageImages.reduce((sum, img) => sum + img.length, 0);
-            console.log(`📐 Quality ${quality.toFixed(2)}: ${Math.round(totalSize / 1024)}KB (${pageImages.length} trang)`);
-            
-            if (totalSize <= MAX_PAYLOAD) break;
-            quality -= 0.05;
+          // LOCAL MODE: Chất lượng cao, KHÔNG giới hạn payload
+          // Local dev server không bị giới hạn 4.5MB như Vercel
+          const QUALITY = 0.6;
+          for (const canvas of canvases) {
+            pageImages.push(canvas.toDataURL("image/jpeg", QUALITY));
           }
-          
-          console.log(`📤 Gửi ${pageImages.length} trang, quality=${quality.toFixed(2)}`);
+          const totalSize = pageImages.reduce((sum, img) => sum + img.length, 0);
+          console.log(`📤 Gửi ${pageImages.length} trang, quality=${QUALITY}, tổng=${Math.round(totalSize / 1024)}KB`);
         } catch (pdfErr) {
           console.error("❌ Lỗi render PDF sang ảnh:", pdfErr);
         }
