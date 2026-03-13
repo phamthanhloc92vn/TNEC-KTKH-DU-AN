@@ -110,11 +110,10 @@ export default function Home() {
             useSystemFonts: true,
           }).promise;
 
-          // Vercel giới hạn request body 4.5MB (App Router không override được)
-          // Mục tiêu: payload < 3.5MB an toàn
-          // 15 trang × 1 trang ~200KB (scale 0.75, quality 0.4) = ~3MB ✅
+          // Với 800px hard cap: mỗi trang ~60-80KB → 30 trang ~2.4MB, dưới Vercel 4.5MB
+          // Đủ bao phủ các điều khoản tài chính nằm ở giữa HĐ dài
           const totalPages = pdf.numPages;
-          const MAX_READ = 15;
+          const MAX_READ = 30;
           const pagesToRender: number[] = [];
           
           for (let p = 1; p <= Math.min(totalPages, MAX_READ); p++) {
