@@ -261,12 +261,12 @@ export default function SettingsModal({ isOpen, onClose, onSave }: SettingsModal
                                             onChange={(e) => setNewProject(e.target.value)}
                                             onKeyDown={(e) => e.key === "Enter" && handleAddProject()}
                                             placeholder="Nhập tên dự án mới..."
-                                            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-400/50 focus:ring-1 focus:ring-emerald-400/50 transition-all"
+                                            className="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-white/40 focus:outline-none focus:border-emerald-400/50 focus:ring-1 focus:ring-emerald-400/50 transition-all"
                                         />
                                         <button
                                             onClick={handleAddProject}
                                             disabled={!newProject.trim()}
-                                            className="px-3 py-2 bg-emerald-500/15 border border-emerald-500/30 rounded-lg text-emerald-400 hover:bg-emerald-500/25 transition-colors flex items-center gap-1.5 text-sm font-medium disabled:opacity-30 disabled:cursor-not-allowed"
+                                            className="px-4 py-2.5 bg-emerald-500/20 border border-emerald-500/40 rounded-lg text-emerald-400 hover:bg-emerald-500/30 transition-colors flex items-center gap-1.5 text-sm font-semibold disabled:opacity-30 disabled:cursor-not-allowed"
                                         >
                                             <Plus className="w-3.5 h-3.5" /> Thêm
                                         </button>
