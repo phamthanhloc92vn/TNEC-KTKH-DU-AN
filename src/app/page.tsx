@@ -110,33 +110,28 @@ export default function Home() {
             useSystemFonts: true,
           }).promise;
 
-          // Luôn lấy 40 trang ĐẦU TIÊN của hợp đồng (vì metadata, tiền bạc thường ở đầu)
-          // Nếu HĐ ngắn thì lấy tất cả. Nếu dài thì lấy 40 trang đầu.
+          // Vercel giới hạn request body 4.5MB → chỉ gửi 20 trang đầu
+          // Đủ bao gồm các điều khoản tiền bạc thường nằm ở nửa đầu HĐ
           const totalPages = pdf.numPages;
-          const MAX_READ = 40;
+          const MAX_READ = 20;
           const pagesToRender: number[] = [];
           
           for (let p = 1; p <= Math.min(totalPages, MAX_READ); p++) {
             pagesToRender.push(p);
           }
           
-          // Nếu HĐ quá dài (>40 trang), lấy thêm vài trang cuối để xem chữ ký
+          // Nếu HĐ dài, thêm trang cuối để bắt chữ ký
           if (totalPages > MAX_READ) {
-            const lastPages = [totalPages - 1, totalPages];
-            lastPages.forEach(p => {
-              if (p > MAX_READ && !pagesToRender.includes(p)) pagesToRender.push(p);
-            });
+            const lastPage = totalPages;
+            if (!pagesToRender.includes(lastPage)) pagesToRender.push(lastPage);
           }
           
-          console.log(`📄 PDF: ${totalPages} trang, gửi ${pagesToRender.length}/40 trang quan trọng nhất.`);
-          console.log(`📄 PDF: ${totalPages} trang, render ${pagesToRender.length} trang [${pagesToRender.join(',')}]`);
+          console.log(`📄 PDF: ${totalPages} trang, gửi ${pagesToRender.length} trang (Vercel 4.5MB limit).`);
 
           for (const p of pagesToRender) {
             setProcessingText(`Đang render trang ${p}/${totalPages}...`);
             const page = await pdf.getPage(p);
-            // Scale 1.5 + quality 0.7: ảnh rõ nét → khi AI resize 512x512 vẫn đọc được số
-            // Token cost KHÔNG ĐỔI vì detail:low luôn = 85 tokens/ảnh
-            const viewport = page.getViewport({ scale: 1.5 });
+            const viewport = page.getViewport({ scale: 1.0 }); // Scale 1.0 → ảnh nhỏ hơn, vẫn đọc được với detail:high
             const canvas = document.createElement("canvas");
             const ctx = canvas.getContext("2d");
             canvas.height = viewport.height;
@@ -144,7 +139,7 @@ export default function Home() {
 
             if (ctx) {
               await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-              const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+              const dataUrl = canvas.toDataURL("image/jpeg", 0.5); // Quality 0.5 → payload nhỏ, dưới giới hạn Vercel 4.5MB
               pageImages.push(dataUrl);
               if (p === 1) previewBase64 = dataUrl;
             }
