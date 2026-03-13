@@ -110,28 +110,29 @@ export default function Home() {
             useSystemFonts: true,
           }).promise;
 
-          // Vercel giới hạn request body 4.5MB → chỉ gửi 20 trang đầu
-          // Đủ bao gồm các điều khoản tiền bạc thường nằm ở nửa đầu HĐ
+          // Vercel giới hạn request body 4.5MB (App Router không override được)
+          // Mục tiêu: payload < 3.5MB an toàn
+          // 15 trang × 1 trang ~200KB (scale 0.75, quality 0.4) = ~3MB ✅
           const totalPages = pdf.numPages;
-          const MAX_READ = 20;
+          const MAX_READ = 15;
           const pagesToRender: number[] = [];
           
           for (let p = 1; p <= Math.min(totalPages, MAX_READ); p++) {
             pagesToRender.push(p);
           }
           
-          // Nếu HĐ dài, thêm trang cuối để bắt chữ ký
+          // Nếu HĐ dài hơn 15 trang, thêm trang cuối để bắt chữ ký
           if (totalPages > MAX_READ) {
             const lastPage = totalPages;
             if (!pagesToRender.includes(lastPage)) pagesToRender.push(lastPage);
           }
           
-          console.log(`📄 PDF: ${totalPages} trang, gửi ${pagesToRender.length} trang (Vercel 4.5MB limit).`);
+          console.log(`📄 PDF: ${totalPages} trang, gửi ${pagesToRender.length} trang (Vercel limit)`);
 
           for (const p of pagesToRender) {
             setProcessingText(`Đang render trang ${p}/${totalPages}...`);
             const page = await pdf.getPage(p);
-            const viewport = page.getViewport({ scale: 1.0 }); // Scale 1.0 → ảnh nhỏ hơn, vẫn đọc được với detail:high
+            const viewport = page.getViewport({ scale: 0.75 }); // scale nhỏ để payload dưới 4.5MB Vercel
             const canvas = document.createElement("canvas");
             const ctx = canvas.getContext("2d");
             canvas.height = viewport.height;
@@ -139,7 +140,7 @@ export default function Home() {
 
             if (ctx) {
               await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-              const dataUrl = canvas.toDataURL("image/jpeg", 0.5); // Quality 0.5 → payload nhỏ, dưới giới hạn Vercel 4.5MB
+              const dataUrl = canvas.toDataURL("image/jpeg", 0.4); // quality 0.4 → ~150-200KB/trang
               pageImages.push(dataUrl);
               if (p === 1) previewBase64 = dataUrl;
             }
